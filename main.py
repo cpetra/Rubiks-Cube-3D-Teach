@@ -36,7 +36,7 @@ class GuideCircle(Entity):
 class Game(Ursina.__closure__[0].cell_contents):
     def __init__(self):
         super().__init__()
-        window.fullscreen = False
+        window.fullscreen = True
         Entity(model='quad', scale=60, texture='white_cube', texture_scale=(60, 60), rotation_x=90, y=-5,
                color=color.light_gray)  # plane
         Entity(model='sphere', scale=100, texture='textures/blank.png', double_sided=True)  # sky
@@ -61,10 +61,47 @@ class Game(Ursina.__closure__[0].cell_contents):
         self.guidetext = Text(origin=(-.5, -5), color=color.black, scale=2)
         self.toggle_game_mode()
         self.create_sensors()
+        self.create_control_buttons()
         self.random_state(rotations=3) # initial state of the cube, rotations - number of side turns
         self.guideCircle = GuideCircle(position=(3.0, 0, 0), rotation=(0,90,0))
         self.hideGuideCircle()
         #self.setGuideCircle('right')
+
+    def create_control_buttons(self):
+        """Create 12 rotation buttons in top-left corner"""
+        faces = ['TOP', 'BOTTOM', 'FACE', 'BACK', 'LEFT', 'RIGHT']
+        faces_map = {
+            'TOP': 'U',
+            'BOTTOM': 'D',
+            'FACE': 'F',
+            'BACK': 'B',
+            'LEFT': 'L',
+            'RIGHT': 'R'
+        }
+        button_properties = {
+            'scale': (0.1, 0.04),
+            'text_size': 0.8,
+            'color': color.dark_gray,
+            'parent': camera.ui
+        }
+
+        # Create two columns of buttons
+        for i, face in enumerate(faces):
+            # Clockwise buttons (left column)
+            Button(
+                text=faces_map[face],
+                position=(-0.72, 0.45 - i*0.05),
+                on_click=Func(self.rotate_side, face, False),
+                **button_properties
+            )
+            
+            # Counter-clockwise buttons (right column)
+            Button(
+                text=f"{faces_map[face]}\'",
+                position=(-0.59, 0.45 - i*0.05),
+                on_click=Func(self.rotate_side, face, True),
+                **button_properties
+            )
 
     def hideGuideCircle(self):
         self.guideCircle.visible = False
