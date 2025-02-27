@@ -1,17 +1,51 @@
 from ursina import *
+class GuideCircle(Entity):
+    def __init__(self, position=(0,0,0), rotation=(0,0,0), radius=2.0, segments=32, scale=(1,1,1)):
+        super().__init__(
+            position=position,
+            scale=scale,
+            rotation=rotation
+        )
 
+        # Create vertices for the circle
+        vertices = []
+        for i in range(segments + 1):
+            angle = 2 * math.pi * i / segments
+            x = radius * math.cos(angle)
+            y = radius * math.sin(angle)
+            vertices.append(Vec3(x, y, 0))
 
-class Game(Ursina):
+        # Create Mesh
+        self.circle = Entity(
+            parent=self,
+            model=Mesh(vertices=vertices, mode='line', thickness=8),
+            color=color.black,
+            position=(0, 0, 0),
+            alpha=0.4
+        )
+
+        self.cone = Entity(
+            parent=self,
+            model=Cone(resolution=32, height=0.8),  # Adjust base and height as needed
+            color=color.black,
+            position=(radius, -0.4, 0.0),  # Adjust position to be slightly above the circle
+            scale=(0.4, 1.0, 0.4),
+            alpha=0.4
+        )
+
+class Game(Ursina.__closure__[0].cell_contents):
     def __init__(self):
         super().__init__()
-        window.fullscreen = True
+        window.fullscreen = False
         Entity(model='quad', scale=60, texture='white_cube', texture_scale=(60, 60), rotation_x=90, y=-5,
                color=color.light_gray)  # plane
-        Entity(model='sphere', scale=100, texture='textures/sky0', double_sided=True)  # sky
+        Entity(model='sphere', scale=100, texture='textures/blank.png', double_sided=True)  # sky
         EditorCamera()
+
         camera.world_position = (0, 0, -15)
         self.model, self.texture = 'models/custom_cube', 'textures/rubik_texture'
         self.load_game()
+        self.ignore_key = False
 
     def load_game(self):
         self.create_cube_positions()
@@ -24,9 +58,50 @@ class Game(Ursina):
         self.action_trigger = True
         self.action_mode = True
         self.message = Text(origin=(0, 19), color=color.black)
+        self.guidetext = Text(origin=(-.5, -5), color=color.black, scale=2)
         self.toggle_game_mode()
         self.create_sensors()
         self.random_state(rotations=3) # initial state of the cube, rotations - number of side turns
+        self.guideCircle = GuideCircle(position=(3.0, 0, 0), rotation=(0,90,0))
+        self.hideGuideCircle()
+        #self.setGuideCircle('right')
+
+    def hideGuideCircle(self):
+        self.guideCircle.visible = False
+        self.guidetext.text = ''
+        
+    def setGuideCircle(self, position='right', inverted=False):
+        angle = 90 if not inverted else -90
+        suffix = '\'' if inverted else ''
+        self.guideCircle.visible = True
+        if position == 'right':
+            self.guideCircle.position = (3.0, 0, 0)
+            self.guideCircle.rotation = (90-angle, 90, 0)
+            text = 'R'
+        elif position == 'left':
+            self.guideCircle.position = (-3.0, 0, 0)
+            self.guideCircle.rotation = (90-angle, 90, 0)
+            text = 'L'
+        elif position == 'up':
+            self.guideCircle.position = (0, 3.0, 0)
+            self.guideCircle.rotation = (-angle, 0, -angle)
+            text = 'U'
+        elif position == 'down':
+            self.guideCircle.position = (0, -3.0, 0)
+            self.guideCircle.rotation = (-angle, 0, -angle)
+            text = 'D'
+        elif position == 'front':
+            self.guideCircle.position = (0, 0, -3.0)
+            self.guideCircle.rotation = (180, angle-90, 90)
+            text = 'F'
+        elif position == 'back':
+            self.guideCircle.position = (0, 0, 3.0)
+            self.guideCircle.rotation = (180, angle-90, 90)
+            text = 'B'
+        msg = dedent(f"{text}{suffix}").strip()
+        self.guidetext.text = msg
+
+#        invoke(self.toggle_animation_trigger, delay=self.animation_time + 0.11)
 
     def random_state(self, rotations=3):
         [self.rotate_side_without_animation(random.choice(list(self.rotation_axes))) for i in range(rotations)]
@@ -62,7 +137,7 @@ class Game(Ursina):
         '''prohibiting side rotation during rotation animation'''
         self.action_trigger = not self.action_trigger
 
-    def rotate_side(self, side_name):
+    def rotate_side(self, side_name, inverse=False):
         self.action_trigger = False
         cube_positions = self.cubes_side_positons[side_name]
         rotation_axis = self.rotation_axes[side_name]
@@ -70,7 +145,10 @@ class Game(Ursina):
         for cube in self.CUBES:
             if cube.position in cube_positions:
                 cube.parent = self.PARENT
-                eval(f'self.PARENT.animate_rotation_{rotation_axis}(90, duration=self.animation_time)')
+                if inverse:
+                    eval(f'self.PARENT.animate_rotation_{rotation_axis}(-90, duration=self.animation_time)')
+                else:
+                    eval(f'self.PARENT.animate_rotation_{rotation_axis}(90, duration=self.animation_time)')
         invoke(self.toggle_animation_trigger, delay=self.animation_time + 0.11)
 
     def reparent_to_scene(self):
@@ -90,7 +168,7 @@ class Game(Ursina):
         self.TOP = {Vec3(x, 1, z) for x in range(-1, 2) for z in range(-1, 2)}
         self.SIDE_POSITIONS = self.LEFT | self.BOTTOM | self.FACE | self.BACK | self.RIGHT | self.TOP
 
-    def input(self, key):
+    def input(self, key, *released):
         if key in 'mouse1 mouse3' and self.action_mode and self.action_trigger:
             for hitinfo in mouse.collisions:
                 collider_name = hitinfo.entity.name
@@ -98,10 +176,68 @@ class Game(Ursina):
                         key == 'mouse3' and collider_name in 'TOP BOTTOM'):
                     self.rotate_side(collider_name)
                     break
+        elif key in 'shift-mouse1 shift-mouse3' and self.action_mode and self.action_trigger:
+            for hitinfo in mouse.collisions:
+                collider_name = hitinfo.entity.name
+                if (key == 'shift-mouse1' and collider_name in 'LEFT RIGHT FACE BACK' or
+                        key == 'shift-mouse3' and collider_name in 'TOP BOTTOM'):
+                    self.rotate_side(collider_name, inverse=True)
+                    break
         if key == 'mouse2':
             self.toggle_game_mode()
-        super().input(key)
+        if key == 'r':
+            if self.ignore_key:
+                self.ignore_key = False
+            else:
+                self.setGuideCircle('right')
+        elif key == 'shift-r':
+            self.ignore_key = True
+            self.setGuideCircle('right', inverted=True)
+        elif key == 'l':
+            if self.ignore_key:
+                self.ignore_key = False
+            else:
+                self.setGuideCircle('left')
+        elif key == 'shift-l':
+            self.ignore_key = True
+            self.setGuideCircle('left', inverted=True)
+        elif key == 'u':
+            if self.ignore_key:
+                self.ignore_key = False
+            else:
+                self.setGuideCircle('up')
+        elif key == 'shift-u':
+            self.ignore_key = True
+            self.setGuideCircle('up', inverted=True)
+        elif key == 'd':
+            if self.ignore_key:
+                self.ignore_key = False
+            else:
+                self.setGuideCircle('down')
+        elif key == 'shift-d':
+            self.ignore_key = True
+            self.setGuideCircle('down', inverted=True)
+        elif key == 'f':
+            # f may come immediately after shift-f, so ignore the key
+            if self.ignore_key:
+                self.ignore_key = False
+            else:
+                self.setGuideCircle('front')
+        elif key == 'shift-f':
+            self.ignore_key = True
+            self.setGuideCircle('front', inverted=True)
+        elif key == 'b':
+            if self.ignore_key:
+                self.ignore_key = False
+            else:
+                self.setGuideCircle('back')
+        elif key == 'shift-b':
+            self.ignore_key = True
+            self.setGuideCircle('back', inverted=True)
+        elif key == 'h':
+            self.hideGuideCircle()
 
+        super().input(key)
 
 if __name__ == '__main__':
     game = Game()
